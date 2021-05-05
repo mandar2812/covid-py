@@ -28,7 +28,11 @@ def load_data(state: str, start_date: datetime.datetime) -> pd.DataFrame:
     return df.loc[df.Date >= start_date].copy()
 
 
-def tuning_exp(state: str, population: int, start_date: datetime.datetime):
+def tuning_exp(
+        state: str,
+        population: int,
+        start_date: datetime.datetime,
+        num_samples: int = 50):
     """Perform the sampling experiment."""
     def _tuning_fn(config: Dict[str, Any]):
         data: pd.DataFrame = load_data(state, start_date)
@@ -67,7 +71,7 @@ def tuning_exp(state: str, population: int, start_date: datetime.datetime):
         y_pred = projected_results.to_numpy() / population
         y_actual = data.loc[data.Date > start_date, ["Confirmed", "Cured", "Deaths"]].to_numpy() / population
 
-        tune.report(kl_div=np.mean(np.sum(-y_pred*np.log(y_actual), axis=-1)))
+        tune.report(kl_div=np.mean(np.sum(y_pred*np.log(y_pred/y_actual), axis=-1)))
 
     analysis = tune.run(
         _tuning_fn,
@@ -82,7 +86,7 @@ def tuning_exp(state: str, population: int, start_date: datetime.datetime):
         },
         metric="kl_div",
         mode="min",
-        num_samples=50,
+        num_samples=num_samples,
         # search_alg=ConcurrencyLimiter(
         #     DragonflySearch(
         #         optimizer="bandit",
