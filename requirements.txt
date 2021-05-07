@@ -36,7 +36,6 @@ decorator==4.4.2
 defusedxml==0.7.1
 descartes==1.1.0
 dill==0.3.3
-dragonfly-opt==0.1.6
 entrypoints==0.3
 fastprogress==1.0.0
 filelock==3.0.12
