@@ -76,13 +76,13 @@ def tuning_exp(
     analysis = tune.run(
         _tuning_fn,
         config={
-            "beta": tune.uniform(0.75, 1.2),
+            "beta": tune.uniform(0.6, 1.2),
             "p_a": tune.uniform(0.25, 0.7),
             "r_b": tune.uniform(0.3, 0.8),
             "eps": tune.uniform(1. / 15., 1. / 3.),
-            "mu": tune.uniform(0.01, 0.05),
+            "mu": tune.loguniform(0.001, 0.05),
             "rho": tune.loguniform(1e-4, 1e-3),
-            "p_d": tune.uniform(0.01, 0.05),
+            "p_d": tune.loguniform(0.005, 0.05),
         },
         metric="kl_div",
         mode="min",
