@@ -1,7 +1,7 @@
-### −∗− mode : python ; −∗−
-# @file EpiModel.py
-# @author Bruno Goncalves, Mandar Chandorkar
-######################################################
+"""Epidemic model.
+
+@author Bruno Goncalves, Mandar Chandorkar
+"""
 
 from datetime import datetime, timedelta
 import networkx as nx
@@ -15,52 +15,58 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 tqdm.pandas()
 
+
 class EpiModel(object):
-    """Simple Epidemic Model Implementation
-    
-        Provides a way to implement and numerically integrate 
+    """Simple Epidemic Model Implementation.
+
+    Provides a way to implement and numerically integrate
+    an epidemic model.
     """
+
     def __init__(self, compartments=None):
+        """Create a new model."""
         self.transitions = nx.MultiDiGraph()
         self.seasonality = None
-        
+
         if compartments is not None:
             self.transitions.add_nodes_from([comp for comp in compartments])
-    
-    def add_interaction(self, source, target, agent, rate):        
-        self.transitions.add_edge(source, target, agent=agent, rate=rate)        
-        
+
+    def add_interaction(self, source, target, agent, rate):
+        """Add an interaction."""
+        self.transitions.add_edge(source, target, agent=agent, rate=rate)
+
     def add_spontaneous(self, source, target, rate):
+        """Add a spontaneous conversion."""
         self.transitions.add_edge(source, target, rate=rate)
-        
+
     def _new_cases(self, population, time, pos):
-        """Internal function used by integration routine"""
+        """Compute new cases for the integration routine."""
         diff = np.zeros(len(pos))
-        N = np.sum(population)        
-        
+        N = np.sum(population)
+
         for edge in self.transitions.edges(data=True):
             source = edge[0]
             target = edge[1]
             trans = edge[2]
-            
+
             rate = trans['rate']*population[pos[source]]
-            
+
             if 'agent' in trans:
                 agent = trans['agent']
                 rate *= population[pos[agent]]/N
 
                 if self.seasonality is not None:
-                    curr_t = int(time)%365
+                    curr_t = int(time) % 365
                     season = float(self.seasonality[curr_t])
                     rate *= season
-                
+
             diff[pos[source]] -= rate
             diff[pos[target]] += rate
-            
+
         return diff
-    
+
     def plot(self, title=None, normed=True, **kwargs):
-        """Convenience function for plotting"""
+        """Plot model results."""
         try:
             if normed:
                 N = self.values_.iloc[0].sum()
@@ -70,27 +76,27 @@ class EpiModel(object):
 
             ax.set_xlabel('Time')
             ax.set_ylabel('Population')
-            
+
             if title is not None:
                 ax.set_title(title)
             ax.minorticks_on()
             ax.grid(True, which='major', linestyle='-', linewidth=0.25, axis='both', alpha=0.85, color="black")
             ax.grid(True, which='minor', linestyle='-.', linewidth=0.25, axis='both', alpha=0.7)
             return ax
-        except:
+        except Exception:
             raise Exception('You must call integrate() first')
-    
+
     def __getattr__(self, name):
-        """Dynamic method to return the individual compartment values"""
+        """Return the individual compartment values."""
         if 'values_' in self.__dict__:
             return self.values_[name]
         else:
             raise AttributeError("'EpiModel' object has no attribute '%s'" % name)
 
     def simulate(self, timesteps, t_min=1, seasonality=None, start_date=datetime.today().date(), **kwargs):
-        """Stochastically simulate the epidemic model"""
+        """Simulate the epidemic model."""
         pos = {comp: i for i, comp in enumerate(kwargs)}
-        population=np.zeros(len(pos), dtype='int')
+        population = np.zeros(len(pos), dtype='int')
 
         for comp in pos:
             population[pos[comp]] = kwargs[comp]
@@ -113,9 +119,8 @@ class EpiModel(object):
             new_pop = values[-1].copy()
             N = np.sum(pop)
 
-
             for comp in comps:
-                trans = list(self.transitions.edges(comp, data=True))             
+                trans = list(self.transitions.edges(comp, data=True))
 
                 prob = np.zeros(len(comps), dtype='float')
 
@@ -130,7 +135,7 @@ class EpiModel(object):
                         rate *= pop[agent]/N
 
                         if self.seasonality is not None:
-                            curr_t = int(t)%365
+                            curr_t = int(t) % 365
                             season = float(self.seasonality[curr_t])
                             rate *= season
 
@@ -155,15 +160,21 @@ class EpiModel(object):
 
         values = np.array(values)
         self.values_ = pd.DataFrame(values[1:], columns=comps, index=dates)
-    
-    def integrate(self, timesteps, t_min=1, seasonality=None, start_date=datetime.today().date(), **kwargs):
-        """Numerically integrate the epidemic model"""
+
+    def integrate(
+            self,
+            timesteps,
+            t_min=1,
+            seasonality=None,
+            start_date=datetime.today().date(),
+            **kwargs):
+        """Integrate the epidemic model."""
         pos = {comp: i for i, comp in enumerate(kwargs)}
-        population=np.zeros(len(pos))
-        
+        population = np.zeros(len(pos))
+
         for comp in pos:
             population[pos[comp]] = kwargs[comp]
-        
+
         time = np.arange(t_min, t_min+timesteps, 1)
         start_date = (
             start_date +
@@ -172,26 +183,33 @@ class EpiModel(object):
         dates = pd.date_range(start=start_date, end=start_date+timedelta(days=timesteps-1), freq='D')
 
         self.seasonality = seasonality
-        self.values_ = pd.DataFrame(scipy.integrate.odeint(self._new_cases, population, time, args=(pos,)), columns=pos.keys(), index=dates)
+        self.values_ = pd.DataFrame(
+            scipy.integrate.odeint(self._new_cases, population, time, args=(pos,)),
+            columns=pos.keys(),
+            index=dates
+        )
 
     def __repr__(self):
+        """Print out the model."""
         text = 'Epidemic Model with %u compartments and %u transitions:\n\n' % \
-              (self.transitions.number_of_nodes(), 
-               self.transitions.number_of_edges())
-        
+            (
+                self.transitions.number_of_nodes(),
+                self.transitions.number_of_edges()
+            )
+
         for edge in self.transitions.edges(data=True):
             source = edge[0]
             target = edge[1]
             trans = edge[2]
-            
+
             rate = trans['rate']
 
             if 'agent' in trans:
                 agent = trans['agent']
                 text += "%s + %s = %s %f\n" % (source, agent, target, rate)
             else:
-                text+="%s -> %s %f\n" % (source, target, rate)
-        
+                text += "%s -> %s %f\n" % (source, target, rate)
+
         R0 = self.R0()
 
         if R0 is not None:
@@ -237,8 +255,8 @@ class EpiModel(object):
 
         return inf
 
-
     def R0(self):
+        """Compute R0."""
         infected = set()
 
         susceptible = self._get_susceptible()
@@ -247,7 +265,6 @@ class EpiModel(object):
             if "agent" in data:
                 infected.add(data['agent'])
                 infected.add(node_j)
-
 
         infected = sorted(infected)
         N_infected = len(infected)
@@ -275,11 +292,11 @@ class EpiModel(object):
                     if node_j in pos:
                         target = pos[node_j]
                         V[target, source] -= rate
-        
+
             eig, v = linalg.eig(np.dot(F, linalg.inv(V)))
 
             return eig.max()
-        except:
+        except Exception:
             return None
 
 
@@ -293,7 +310,7 @@ if __name__ == '__main__':
     SIR.add_spontaneous('I', 'R', mu)
 
     N = 100000
-    I0 = 10  
+    I0 = 10
 
     season = np.ones(365+1)
     season[74:100] = 0.25
@@ -315,5 +332,3 @@ if __name__ == '__main__':
     (values.median(axis=0)/N).plot(ax=ax, c='r')
 
     fig.savefig('SIR.png')
-
-

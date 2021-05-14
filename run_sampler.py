@@ -3,6 +3,7 @@
 @author Mandar Chandorkar
 """
 
+import os
 from typing import Any, Dict
 from pathlib import Path
 import datetime
@@ -24,7 +25,8 @@ def tuning_exp(
         population: int,
         start_date: datetime.datetime,
         hyp_config: Dict[str, Any],
-        num_samples: int = 50):
+        num_samples: int = 50,
+        par_factor: float = 0.2):
     """Perform the sampling experiment."""
     def _tuning_fn(config: Dict[str, Any]):
         data: pd.DataFrame = load_data(state, start_date)
@@ -59,13 +61,6 @@ def tuning_exp(
         })
 
         y_pred = projected_results.to_numpy() / population
-        # y_pred_aug = np.concatenate(
-        #     [
-        #         1.0 - np.sum(y_pred, axis=-1, keepdims=True),
-        #         y_pred
-        #     ],
-        #     axis=-1
-        # )
 
         case_data: pd.DataFrame = data.loc[
             data.Date > start_date,
@@ -73,25 +68,19 @@ def tuning_exp(
         ]
         projected_case_data = pd.DataFrame(
             {
-                "rest": population - (case_data["Confirmed"] - case_data["Cured"] + case_data["Deaths"]),
-                "infected": case_data["Confirmed"] - case_data["Cured"],
+                "rest": population - (case_data["Confirmed"] - case_data["Cured"]),
+                "infected": case_data["Confirmed"] - (case_data["Cured"] + case_data["Deaths"]),
                 "dead": case_data["Deaths"]
             }
         )
 
         y_actual = projected_case_data.to_numpy() / population
-        # y_actual_aug = np.concatenate(
-        #     [
-        #         1.0 - np.sum(y_actual, axis=-1, keepdims=True),
-        #         y_actual
-        #     ],
-        #     axis=-1
-        # )
 
         tune.report(
             kl_div=np.mean(np.sum(y_pred*np.log(y_pred/y_actual), axis=-1))
         )
 
+    cpu_count = int(par_factor * os.cpu_count())
     analysis = tune.run(
         _tuning_fn,
         config=hyp_config,
@@ -99,7 +88,10 @@ def tuning_exp(
         mode="min",
         num_samples=num_samples,
         local_dir=Path.cwd() / ".tuning",
-        verbose=2
+        verbose=1,
+        resources_per_trial={
+            "cpu": cpu_count
+        }
     )
 
     print(
