@@ -1,11 +1,10 @@
-### −∗− mode : python ; −∗−
-# @file run_sampler.py
-# @author Mandar Chandorkar
-######################################################
+"""Parameter sampling and tuning.
 
+@author Mandar Chandorkar
+"""
+
+from typing import Any, Dict
 from pathlib import Path
-import argparse
-from typing import Any, Dict, List, Optional
 import datetime
 import numpy as np
 import pandas as pd
@@ -36,10 +35,8 @@ def tuning_exp(
     """Perform the sampling experiment."""
     def _tuning_fn(config: Dict[str, Any]):
         data: pd.DataFrame = load_data(state, start_date)
-        simulator = models.seiird(
+        simulator = models.seird(
             beta=config["beta"],
-            p_a=config["p_a"],
-            r_b=config["r_b"],
             eps=config["eps"],
             mu=config["mu"],
             rho=config["rho"],
@@ -56,29 +53,40 @@ def tuning_exp(
             start_date=start_date.date(),
             S=population-I0,
             E=0,
-            Is=int(I0*config["p_a"]),
-            Ia=int(I0*(1 - config["p_a"])),
+            I=I0,
             R=R0,
             D=D0
         )
 
         projected_results = pd.DataFrame({
-            "Confirmed": (simulator.Ia + simulator.Is + start_mh.Confirmed),
+            "Confirmed": (simulator.I.cumsum() + start_mh.Confirmed),
             "Cured": simulator.R,
             "Deaths": simulator.D
         })
 
         y_pred = projected_results.to_numpy() / population
+        y_pred_aug = np.concatenate(
+            [
+                1.0 - np.sum(y_pred, axis=-1, keepdims=True),
+                y_pred
+            ],
+            axis=-1
+        )
         y_actual = data.loc[data.Date > start_date, ["Confirmed", "Cured", "Deaths"]].to_numpy() / population
+        y_actual_aug = np.concatenate(
+            [
+                1.0 - np.sum(y_actual, axis=-1, keepdims=True),
+                y_actual
+            ],
+            axis=-1
+        )
 
-        tune.report(kl_div=np.mean(np.sum(y_pred*np.log(y_pred/y_actual), axis=-1)))
+        tune.report(kl_div=np.mean(np.sum(y_pred_aug*np.log(y_pred_aug/y_actual_aug), axis=-1)))
 
     analysis = tune.run(
         _tuning_fn,
         config={
-            "beta": tune.uniform(0.6, 1.2),
-            "p_a": tune.uniform(0.25, 0.7),
-            "r_b": tune.uniform(0.3, 0.8),
+            "beta": tune.uniform(0.4, 1.2),
             "eps": tune.uniform(1. / 15., 1. / 3.),
             "mu": tune.loguniform(0.001, 0.05),
             "rho": tune.loguniform(1e-4, 1e-3),
@@ -87,6 +95,7 @@ def tuning_exp(
         metric="kl_div",
         mode="min",
         num_samples=num_samples,
+        local_dir=Path.cwd() / ".tuning"
         # search_alg=ConcurrencyLimiter(
         #     DragonflySearch(
         #         optimizer="bandit",
@@ -94,11 +103,10 @@ def tuning_exp(
         #     ),
         #     max_concurrent=12
         # ),
-        # scheduler=AsyncHyperBandScheduler()
     )
 
     print(
-        "Best config: ", 
+        "Best config: ",
         analysis.get_best_config(metric="kl_div", mode="min")
     )
     return analysis

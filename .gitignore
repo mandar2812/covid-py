@@ -136,3 +136,4 @@ dmypy.json
 .vscode
 # The temp data dir.
 .data
+.tuning
