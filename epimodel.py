@@ -26,7 +26,8 @@ class EpiModel(object):
     def __init__(self, compartments=None):
         """Create a new model."""
         self.transitions = nx.MultiDiGraph()
-        self.seasonality = None
+        self.locality = None
+        self.locality_period = None
 
         if compartments is not None:
             self.transitions.add_nodes_from([comp for comp in compartments])
@@ -55,9 +56,12 @@ class EpiModel(object):
                 agent = trans['agent']
                 rate *= population[pos[agent]]/N
 
-                if self.seasonality is not None:
-                    curr_t = int(time) % 365
-                    season = float(self.seasonality[curr_t])
+                if self.locality is not None:
+                    curr_t = int(time) // self.locality_period
+                    if curr_t < len(self.locality):
+                        season = float(self.locality[curr_t])
+                    else:
+                        season = float(mean(self.locality))
                     rate *= season
 
             diff[pos[source]] -= rate
@@ -93,7 +97,14 @@ class EpiModel(object):
         else:
             raise AttributeError("'EpiModel' object has no attribute '%s'" % name)
 
-    def simulate(self, timesteps, t_min=1, seasonality=None, start_date=datetime.today().date(), **kwargs):
+    def simulate(
+            self,
+            timesteps,
+            t_min=1,
+            locality=None,
+            locality_period: int = 7,
+            start_date=datetime.today().date(),
+            **kwargs):
         """Simulate the epidemic model."""
         pos = {comp: i for i, comp in enumerate(kwargs)}
         population = np.zeros(len(pos), dtype='int')
@@ -112,7 +123,8 @@ class EpiModel(object):
         )
         dates = pd.date_range(start=start_date, end=start_date+timedelta(days=timesteps-1), freq='D')
 
-        self.seasonality = seasonality
+        self.locality = locality
+        self.locality_period = locality_period
 
         for t in time:
             pop = values[-1]
@@ -134,9 +146,12 @@ class EpiModel(object):
                         agent = pos[data['agent']]
                         rate *= pop[agent]/N
 
-                        if self.seasonality is not None:
-                            curr_t = int(t) % 365
-                            season = float(self.seasonality[curr_t])
+                        if self.locality is not None:
+                            curr_t = int(t) // self.locality_period
+                            if curr_t < len(self.locality):
+                                season = float(self.locality[curr_t])
+                            else:
+                                season = float(mean(self.locality))
                             rate *= season
 
                     prob[target] = rate
@@ -165,7 +180,8 @@ class EpiModel(object):
             self,
             timesteps,
             t_min=1,
-            seasonality=None,
+            locality=None,
+            locality_period: int = 7,
             start_date=datetime.today().date(),
             **kwargs):
         """Integrate the epidemic model."""
@@ -182,7 +198,8 @@ class EpiModel(object):
         )
         dates = pd.date_range(start=start_date, end=start_date+timedelta(days=timesteps-1), freq='D')
 
-        self.seasonality = seasonality
+        self.locality = locality
+        self.locality_period = locality_period
         self.values_ = pd.DataFrame(
             scipy.integrate.odeint(self._new_cases, population, time, args=(pos,)),
             columns=pos.keys(),

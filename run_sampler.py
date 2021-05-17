@@ -4,6 +4,7 @@
 """
 
 import os
+import math
 from typing import Any, Dict
 from pathlib import Path
 import datetime
@@ -26,10 +27,14 @@ def tuning_exp(
         start_date: datetime.datetime,
         hyp_config: Dict[str, Any],
         num_samples: int = 50,
-        par_factor: float = 0.2):
+        par_factor: float = 0.2,
+        locality_period: int = 7):
     """Perform the sampling experiment."""
-    def _tuning_fn(config: Dict[str, Any]):
-        data: pd.DataFrame = load_data(state, start_date)
+    def _tuning_fn(
+            config: Dict[str, Any],
+            data: pd.DataFrame,
+            start_date: datetime.datetime,
+            locality_period: int):
         simulator = models.seird(
             beta=config["beta"],
             eps=config["eps"],
@@ -51,7 +56,9 @@ def tuning_exp(
             E=0,
             I=I0,
             R=R0,
-            D=D0
+            D=D0,
+            locality=config["locality"],
+            locality_period=locality_period
         )
 
         projected_results = pd.DataFrame({
@@ -80,9 +87,21 @@ def tuning_exp(
             kl_div=np.mean(np.sum(y_pred*np.log(y_pred/y_actual), axis=-1))
         )
 
+    state_df = load_data(state, start_date)
+    num_time_steps = state_df.shape[0]
+    hyp_config["locality"] = [
+        tune.uniform(0.1, 1.5)
+        for i in range(int(math.ceil(num_time_steps / locality_period)))
+    ]
+
     cpu_count = int(par_factor * os.cpu_count())
     analysis = tune.run(
-        _tuning_fn,
+        tune.with_parameters(
+            _tuning_fn,
+            data=state_df,
+            start_date=start_date,
+            locality_period=locality_period
+        ),
         config=hyp_config,
         metric="kl_div",
         mode="min",
